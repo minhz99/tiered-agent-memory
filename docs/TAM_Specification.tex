@@ -1,9 +1,11 @@
 \documentclass[a4paper,12pt]{article}
 
-\usepackage[utf8]{vietnam}
+% \usepackage[utf8]{vietnam}
+\usepackage[vietnamese]{babel}
 \usepackage{amsmath,amssymb}
 \usepackage{geometry}
 \usepackage[hypertexnames=false]{hyperref}
+\hypersetup{hidelinks}
 \usepackage{tikz}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
@@ -53,7 +55,7 @@
 
 \title{\textbf{Tiered Agent Memory (TAM)}\\[6pt]
   \large Kiến trúc bộ nhớ nhận thức đa tầng\\dành cho AI Agent}
-\author{TAM Research Team}
+\author{minhz99 / tiered-agent-memory}
 \date{\today}
 
 \begin{document}
@@ -630,6 +632,7 @@ Nếu phải rút toàn bộ đặc tả về một câu ngắn gọn, thì câu
 
 \begin{figure}[H]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
   tier/.style={draw, rounded corners=6pt, minimum width=12cm, minimum height=1.4cm, font=\small\bfseries, align=center},
   plane/.style={draw, dashed, rounded corners=3pt, minimum width=3.2cm, minimum height=0.8cm, font=\scriptsize, align=center},
@@ -670,7 +673,8 @@ Nếu phải rút toàn bộ đặc tả về một câu ngắn gọn, thì câu
 \node[plane, fill=tamgreen!10, draw=tamgreen](rei) at (-8, 2) {Reinforcement};
 \node[font=\footnotesize\itshape, tamblue] at (-8, 6) {3 Dynamics};
 
-\end{tikzpicture}
+\end{tikzpicture}%
+}
 \caption{Kiến trúc tổng thể TAM: 4 tầng lưu trữ + 3 cơ chế động lực học + 7 lớp điều phối ngang.}
 \label{fig:architecture}
 \end{figure}
@@ -861,4 +865,3 @@ Test framework     & pytest \\
 \end{enumerate}
 
 \end{document}
-
