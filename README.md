@@ -53,7 +53,7 @@ python -m pytest tests/ -v
 
 ## Documentation
 
-Full specification available in `docs/TAM_Specification-en.tex` / `docs/TAM_Specification-en.pdf` (27 pages).
+Full specification available at [`docs/TAM_Specification-en.pdf`](docs/TAM_Specification-en.pdf).
 
 ## License
 
@@ -114,7 +114,7 @@ python -m pytest tests/ -v
 
 ## Tài liệu
 
-Bản đặc tả đầy đủ có tại `docs/TAM_Specification.tex` / `docs/TAM_Specification.pdf` (27 trang).
+Bản đặc tả đầy đủ có tại [`docs/TAM_Specification.pdf`](docs/TAM_Specification.pdf).
 
 ## Giấy phép
 
