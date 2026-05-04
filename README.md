@@ -51,7 +51,7 @@ python -m pytest tests/ -v
 
 ## Documentation
 
-Full specification available in `main.tex` / `main.pdf` (27 pages).
+Full specification available in `docs/TAM_Specification.tex` / `docs/TAM_Specification.pdf` (27 pages).
 
 ## License
 
