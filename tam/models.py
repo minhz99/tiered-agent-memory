@@ -115,6 +115,7 @@ class MemoryRecord:
     # ── 6. Hành vi ──
     usage_count: int = 0
     reinforcement_score: float = 0.0
+    recency_score: float = 1.0                    # [0, 1] — Score suy giảm theo thời gian
     importance: float = 0.5                       # [0, 1]
     decay_rate_override: Optional[float] = None   # Override decay profile
 
@@ -128,6 +129,9 @@ class MemoryRecord:
     conflict_status: ConflictStatus = ConflictStatus.NONE
     superseded_by: Optional[str] = None           # ID of the replacing memory
     supersedes: Optional[str] = None              # ID of the memory it replaces
+
+    # ── Extra Metadata ──
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     # ── Embedding (tính toán khi cần) ──
     embedding: Optional[List[float]] = field(default=None, repr=False)
@@ -162,6 +166,8 @@ class MemoryRecord:
         for k, v in self.__dict__.items():
             if k == "embedding":
                 d[k] = json.dumps(v) if v else None
+            elif k == "metadata":
+                d[k] = json.dumps(v) if v else "{}"
             elif isinstance(v, (Enum,)):
                 d[k] = v.value
             elif isinstance(v, list):
@@ -178,6 +184,8 @@ class MemoryRecord:
         for k, v in d.items():
             if k == "embedding":
                 kwargs[k] = json.loads(v) if v else None
+            elif k == "metadata":
+                kwargs[k] = json.loads(v) if isinstance(v, str) else (v or {})
             elif k == "tier":
                 kwargs[k] = MemoryTier(v) if v else MemoryTier.ACTIVE
             elif k == "memory_type":

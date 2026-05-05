@@ -1,14 +1,15 @@
 """
-Tầng 3: Latent Memory — Ký ức ngủ đông có điều kiện kích hoạt.
+Tầng 3: Latent Memory — Ký ức ngủ đông.
 """
+
 from __future__ import annotations
-import json, logging, sqlite3
+import json
+import sqlite3
 from typing import List, Optional
 import numpy as np
-from tam.models import MemoryRecord, MemoryTier, MemoryType, RetrievalResult, QueryContext
-from tam.config import TAMConfig
 
-logger = logging.getLogger(__name__)
+from tam.models import MemoryRecord, MemoryTier, RetrievalResult, QueryContext
+from tam.config import TAMConfig
 
 class LatentMemory:
     TABLE_NAME = "latent_memory"
@@ -16,98 +17,83 @@ class LatentMemory:
     def __init__(self, config: Optional[TAMConfig] = None, db_path: Optional[str] = None):
         self.config = config or TAMConfig()
         self._db_path = db_path or self.config.db_path
-        self._conn = None
-        self._index: List[tuple] = []
-        self._init_db()
-        self._rebuild_index()
-
-    def _init_db(self):
         self._conn = sqlite3.connect(self._db_path)
         self._conn.row_factory = sqlite3.Row
+        self._init_db()
+
+    def _init_db(self) -> None:
         self._conn.execute(f"""
             CREATE TABLE IF NOT EXISTS {self.TABLE_NAME} (
-                id TEXT PRIMARY KEY, tier TEXT DEFAULT 'latent', memory_type TEXT,
-                content TEXT, summary TEXT, abstraction_group TEXT,
-                core_strategy TEXT, applicability_scope TEXT,
-                domain_tags TEXT, intent_tags TEXT, module_tags TEXT, task_family TEXT,
-                source TEXT, confidence REAL DEFAULT 1.0, recall_confidence REAL DEFAULT 1.0,
-                validation_status TEXT DEFAULT 'unverified',
-                valid_from REAL, valid_to REAL, is_current INTEGER DEFAULT 1,
-                created_at REAL, last_confirmed_at REAL, last_used_at REAL,
-                usage_count INTEGER DEFAULT 0, reinforcement_score REAL DEFAULT 0.0,
-                importance REAL DEFAULT 0.5, decay_rate_override REAL,
-                success_case_ids TEXT DEFAULT '[]', failure_case_ids TEXT DEFAULT '[]',
-                failure_reasons TEXT DEFAULT '[]', reflection_summary TEXT,
-                conflict_status TEXT DEFAULT 'none', superseded_by TEXT, supersedes TEXT,
+                id TEXT PRIMARY KEY,
+                tier TEXT,
+                memory_type TEXT,
+                content TEXT,
+                summary TEXT,
+                abstraction_group TEXT,
+                core_strategy TEXT,
+                applicability_scope TEXT,
+                domain_tags TEXT,
+                intent_tags TEXT,
+                module_tags TEXT,
+                task_family TEXT,
+                source TEXT,
+                confidence REAL,
+                recall_confidence REAL,
+                validation_status TEXT,
+                valid_from REAL,
+                valid_to REAL,
+                is_current INTEGER,
+                created_at REAL,
+                last_confirmed_at REAL,
+                last_used_at REAL,
+                usage_count INTEGER,
+                reinforcement_score REAL,
+                recency_score REAL,
+                importance REAL,
+                decay_rate_override REAL,
+                success_case_ids TEXT,
+                failure_case_ids TEXT,
+                failure_reasons TEXT,
+                reflection_summary TEXT,
+                conflict_status TEXT,
+                superseded_by TEXT,
+                supersedes TEXT,
+                metadata TEXT,
                 embedding TEXT
             )
         """)
         self._conn.commit()
 
-    def _rebuild_index(self):
-        self._index.clear()
-        cursor = self._conn.execute(
-            f"SELECT id, embedding FROM {self.TABLE_NAME} WHERE embedding IS NOT NULL AND is_current = 1"
-        )
-        for row in cursor:
-            emb = json.loads(row["embedding"])
-            self._index.append((row["id"], np.array(emb, dtype=np.float32)))
-
-    def should_activate(self, query_ctx: QueryContext) -> bool:
-        """Kiểm tra cue có đủ mạnh để mở Latent."""
-        return query_ctx.cue_strength >= self.config.latent_cue_threshold
-
-    def add(self, record: MemoryRecord):
+    def add(self, record: MemoryRecord) -> None:
         record.tier = MemoryTier.LATENT
         d = record.to_dict()
-        d["is_current"] = 1 if record.is_current else 0
-        cols = ", ".join(d.keys())
-        phs = ", ".join(["?"] * len(d))
-        self._conn.execute(f"INSERT OR REPLACE INTO {self.TABLE_NAME} ({cols}) VALUES ({phs})", list(d.values()))
+        for k, v in d.items():
+            if isinstance(v, (list, dict)):
+                d[k] = json.dumps(v)
+        columns = ", ".join(d.keys())
+        placeholders = ", ".join(["?"] * len(d))
+        self._conn.execute(f"INSERT OR REPLACE INTO {self.TABLE_NAME} ({columns}) VALUES ({placeholders})", list(d.values()))
         self._conn.commit()
-        if record.embedding:
-            self._index = [(m, e) for m, e in self._index if m != record.id]
-            self._index.append((record.id, np.array(record.embedding, dtype=np.float32)))
 
-    def get(self, memory_id: str) -> Optional[MemoryRecord]:
-        row = self._conn.execute(f"SELECT * FROM {self.TABLE_NAME} WHERE id = ?", (memory_id,)).fetchone()
-        return MemoryRecord.from_dict(dict(row)) if row else None
+    def should_activate(self, ctx: QueryContext) -> bool:
+        return ctx.cue_strength >= self.config.latent_cue_threshold
 
-    def remove(self, memory_id: str):
-        self._conn.execute(f"DELETE FROM {self.TABLE_NAME} WHERE id = ?", (memory_id,))
-        self._conn.commit()
-        self._index = [(m, e) for m, e in self._index if m != memory_id]
-
-    def search_with_expanded_query(self, query_ctx: QueryContext, top_k: int = 10) -> List[RetrievalResult]:
-        """Two-pass retrieval pass 2: dùng expanded query, KHÔNG dùng raw query."""
-        if not self.should_activate(query_ctx):
-            return []
-        if query_ctx.embedding is None or not self._index:
-            return []
-        logger.info("Latent ACTIVATED: cue_strength=%.2f", query_ctx.cue_strength)
-        q = np.array(query_ctx.embedding, dtype=np.float32)
-        qn = np.linalg.norm(q)
-        if qn == 0: return []
-        q = q / qn
-        scores = []
-        for mid, emb in self._index:
-            en = np.linalg.norm(emb)
-            if en == 0: continue
-            scores.append((mid, float(np.dot(q, emb / en))))
-        scores.sort(key=lambda x: x[1], reverse=True)
+    def search_with_expanded_query(self, ctx: QueryContext, top_k: int = 5) -> List[RetrievalResult]:
+        if not ctx.embedding: return []
+        q_vec = np.array(ctx.embedding, dtype=np.float32)
+        cursor = self._conn.execute(f"SELECT * FROM {self.TABLE_NAME} WHERE is_current = 1")
         results = []
-        for mid, sim in scores[:top_k]:
-            rec = self.get(mid)
-            if rec and rec.is_current:
-                results.append(RetrievalResult(memory=rec, activation_score=sim * 0.9, source_tier=MemoryTier.LATENT))
-        return results
-
-    def get_all(self) -> List[MemoryRecord]:
-        rows = self._conn.execute(f"SELECT * FROM {self.TABLE_NAME} WHERE is_current = 1").fetchall()
-        return [MemoryRecord.from_dict(dict(r)) for r in rows]
+        for row in cursor:
+            record = MemoryRecord.from_dict(dict(row))
+            if record.embedding:
+                emb = np.array(record.embedding, dtype=np.float32)
+                sim = float(np.dot(q_vec, emb) / (np.linalg.norm(q_vec) * np.linalg.norm(emb)))
+                if sim > 0.5:
+                    results.append(RetrievalResult(memory=record, activation_score=sim, source_tier=MemoryTier.LATENT))
+        results.sort(key=lambda x: x.activation_score, reverse=True)
+        return results[:top_k]
 
     def count(self) -> int:
-        return self._conn.execute(f"SELECT COUNT(*) as cnt FROM {self.TABLE_NAME} WHERE is_current = 1").fetchone()["cnt"]
+        return self._conn.execute(f"SELECT COUNT(*) as cnt FROM {self.TABLE_NAME}").fetchone()["cnt"]
 
-    def close(self):
-        if self._conn: self._conn.close(); self._conn = None
+    def close(self) -> None: self._conn.close()

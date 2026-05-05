@@ -93,8 +93,9 @@ class TAMConfig:
     style_context_weight: float = 0.3
 
     # --- Embedding ---
-    embedding_dim: int = 384             # Dimensionality of embeddings
-    use_transformer_embeddings: bool = False  # True = sentence-transformers, False = TF-IDF
+    embedding_dim: int = 384             # Dimensionality of embeddings (E5-small is 384)
+    use_transformer_embeddings: bool = True   # Default to high-quality embeddings
+    embedding_model_name: str = "intfloat/multilingual-e5-small"
 
     # --- Intent categories ---
     intent_categories: Dict[str, list] = field(default_factory=lambda: {

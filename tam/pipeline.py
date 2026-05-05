@@ -38,6 +38,8 @@ from tam.planes.state_plane import StatePlane
 from tam.planes.scaling import ScalingPlane
 from tam.planes.evolution import EvolutionPlane
 
+from tam.utils.ast_parser import ASTAnalyzer
+
 logger = logging.getLogger(__name__)
 
 
@@ -208,15 +210,26 @@ class TAMPipeline:
     def add_memory(self, content: str, memory_type: MemoryType = MemoryType.SEMANTIC,
                    tier: MemoryTier = MemoryTier.ACTIVE, **kwargs) -> MemoryRecord:
         """Thêm một memory mới vào hệ thống."""
-        # Tạo embedding
-        embedding = self.query_plane._embed(content)
+        # AST-Aware: Trích xuất metadata nếu là code
+        ast_meta = ASTAnalyzer.extract_metadata(content)
+        if ast_meta["is_code"]:
+            summary = ASTAnalyzer.get_context_summary(ast_meta)
+            logger.info(f"AST-Aware: Detected code structure. Summary: {summary}")
+            # Bổ sung summary vào để embedding hiểu ngữ cảnh code tốt hơn
+            content_for_embedding = f"{content}\nContext: {summary}"
+        else:
+            content_for_embedding = content
+
+        # Tạo embedding với is_query=False (dùng 'passage: ' prefix)
+        embedding = self.query_plane._embed(content_for_embedding, is_query=False)
 
         record = MemoryRecord(
             content=content,
             memory_type=memory_type,
             tier=tier,
             embedding=embedding,
-            **kwargs,
+            metadata=ast_meta if ast_meta["is_code"] else kwargs.get("metadata", {}),
+            **{k: v for k, v in kwargs.items() if k != "metadata"},
         )
 
         if tier == MemoryTier.ACTIVE:
@@ -248,16 +261,24 @@ class TAMPipeline:
         """Chạy background evolution worker."""
         # Maintenance
         all_active = self.active.get_all_current()
-        maint = self.evolution.run_maintenance(all_active, self.decay)
+        # Sử dụng DecayEngine mới để tính toán suy giảm ký ức
+        maint = self.decay.apply_decay(all_active)
 
         # Apply updates
         for r in all_active:
             self.active.update(r)
-        for mid in maint["demote_ids"]:
+        
+        # Di chuyển sang tầng Latent nếu bị hạ tầng
+        for mid in maint["demote_to_latent"]:
             rec = self.active.get(mid)
             if rec:
                 self.active.remove(mid)
                 self.latent.add(rec)
+                
+        # Di chuyển sang Archive nếu bị hạ tầng từ Latent (nếu có logic chạy Latent maintenance)
+        for mid in maint["demote_to_archive"]:
+            # (Thực hiện tương tự cho latent -> archive)
+            pass
 
         # Synthesis
         traces = self.archive.get_recent_traces(limit=self.config.evolution.max_logs_per_batch)

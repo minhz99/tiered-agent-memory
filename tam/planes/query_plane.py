@@ -117,14 +117,33 @@ class QueryPlane:
             return all_types  # Mở hết khi recall
         return all_types
 
-    def _embed(self, text: str) -> List[float]:
-        """Tạo embedding — dùng simple hash-based cho demo, có thể swap sentence-transformers."""
+    def _embed(self, text: str, is_query: bool = True) -> List[float]:
+        """Tạo embedding — hỗ trợ local transformer model với prefix."""
         if self.config.use_transformer_embeddings:
-            return self._embed_transformer(text)
+            return self._embed_transformer(text, is_query=is_query)
         return self._embed_simple(text)
 
+    def _embed_transformer(self, text: str, is_query: bool = True) -> List[float]:
+        """Sentence-transformers embedding với E5-style prefixing."""
+        try:
+            if self._embedder is None:
+                from sentence_transformers import SentenceTransformer
+                model_name = getattr(self.config, "embedding_model_name", "intfloat/multilingual-e5-small")
+                logger.info(f"Loading embedding model: {model_name}...")
+                self._embedder = SentenceTransformer(model_name, device='cpu')
+            
+            # E5 model requires prefixes: 'query: ' for queries and 'passage: ' for documents
+            prefix = "query: " if is_query else "passage: "
+            full_text = prefix + text
+            
+            embedding = self._embedder.encode(full_text, normalize_embeddings=True)
+            return embedding.tolist()
+        except Exception as e:
+            logger.warning(f"Transformer embedding failed: {e}, falling back to simple hash")
+            return self._embed_simple(text)
+
     def _embed_simple(self, text: str) -> List[float]:
-        """Hash-based embedding (deterministic, cho demo)."""
+        """Hash-based embedding (deterministic, fallback)."""
         dim = self.config.embedding_dim
         h = hashlib.sha256(text.encode()).digest()
         rng = np.random.RandomState(int.from_bytes(h[:4], 'big'))
@@ -136,14 +155,3 @@ class QueryPlane:
             vec[wh % dim] += 1.0
         norm = np.linalg.norm(vec)
         return (vec / norm).tolist() if norm > 0 else vec.tolist()
-
-    def _embed_transformer(self, text: str) -> List[float]:
-        """Sentence-transformers embedding (optional)."""
-        try:
-            if self._embedder is None:
-                from sentence_transformers import SentenceTransformer
-                self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
-            return self._embedder.encode(text).tolist()
-        except ImportError:
-            logger.warning("sentence-transformers not installed, falling back to simple embedding")
-            return self._embed_simple(text)
